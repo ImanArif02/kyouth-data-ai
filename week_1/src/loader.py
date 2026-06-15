@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 import sqlite3
 import json
@@ -58,14 +59,14 @@ def load_all_jsons(input_dir, output_dir):
 
             if cursor.rowcount == 1:
                 inserted += 1
-                print(f"✅ Inserted: {file.name}")
+                logging.info(f"Inserted: {file.name}")
             else:
                 skipped += 1
-                print(f"⏭️ Skipped duplicate: {file.name}")
+                logging.warning(f"Skipped duplicate: {file.name}")
 
         except Exception as e:
             skipped += 1
-            print(f"⚠️ Failed: {file.name} - {e}")
+            logging.error(f"Failed: {file.name} - {e}")
 
     conn.commit()
     conn.close()
