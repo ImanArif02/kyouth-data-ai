@@ -1,55 +1,75 @@
+import json
 import os
 import sqlite3
 import time
-import json
 
 from dotenv import load_dotenv
 from google import genai
 
 load_dotenv()
 
-BATCH_SIZE = 5
+MODEL_NAME = "gemini-2.5-flash"
+RPM_LIMIT = 5
+TPM_LIMIT = 250_000
+ESTIMATED_TOKENS_PER_JOB = 5_000
 RETRY_LIMIT = 3
 RETRY_DELAY_SECONDS = 7
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
+
+def calculate_batch_size(
+    tpm_limit: int = TPM_LIMIT,
+    estimated_tokens_per_job: int = ESTIMATED_TOKENS_PER_JOB,
+    max_batch_size: int = 5,
+) -> int:
+    calculated_size = tpm_limit // estimated_tokens_per_job
+    return max(1, min(calculated_size, max_batch_size))
+
+
+BATCH_SIZE = calculate_batch_size()
+
+
 def chunk_rows(rows, batch_size):
     for index in range(0, len(rows), batch_size):
-        yield rows[index:index + batch_size]
+        yield rows[index : index + batch_size]
+
 
 def tag_data(db_url: str):
-    conn = sqlite3.connect(db_url)
-    cursor = conn.cursor()
+    conn = None
 
-    cursor.execute("""
-        SELECT source_id, description
-        FROM jobs
-        WHERE tech_stack IS NULL
-    """)
+    try:
+        conn = sqlite3.connect(db_url)
+        cursor = conn.cursor()
 
-    rows = cursor.fetchall()
-    print(f"Found {len(rows)} jobs to tag")
+        cursor.execute("""
+            SELECT source_id, description
+            FROM jobs
+            WHERE tech_stack IS NULL
+        """)
 
-    if not rows:
-        conn.close()
-        return
+        rows = cursor.fetchall()
+        print(f"Using batch size: {BATCH_SIZE}")
+        print(f"Found {len(rows)} jobs to tag")
 
-    for batch_index, batch in enumerate(chunk_rows(rows, BATCH_SIZE)):
-        print(f"\nProcessing Batch {batch_index + 1} with {len(batch)} jobs")
+        if not rows:
+            return
 
-        job_blocks = []
+        for batch_index, batch in enumerate(chunk_rows(rows, BATCH_SIZE)):
+            print(f"\nProcessing Batch {batch_index + 1} with {len(batch)} jobs")
 
-        for source_id, description in batch:
-            job_blocks.append(f"""
-    Job ID: {source_id}
-    Description:
-    {description}
-    """)
+            job_blocks = []
 
-        batch_text = "\n---\n".join(job_blocks)
+            for source_id, description in batch:
+                job_blocks.append(f"""
+Job ID: {source_id}
+Description:
+{description}
+""")
 
-        prompt = f"""
+            batch_text = "\n---\n".join(job_blocks)
+
+            prompt = f"""
 You will receive multiple job descriptions.
 
 For each Job ID, extract technologies from the description.
@@ -81,55 +101,67 @@ Jobs:
 {batch_text}
 """
 
-        result = {}
+            result = {}
 
-        for attempt in range(RETRY_LIMIT):
-            try:
-                response = client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=prompt,
-                )
-                if not response.text:
-                    raise ValueError("Empty response from Gemini")
+            for attempt in range(RETRY_LIMIT):
+                try:
+                    response = client.models.generate_content(
+                        model=MODEL_NAME,
+                        contents=prompt,
+                    )
 
-                result = json.loads(response.text)
-                break
+                    if not response.text:
+                        raise ValueError("Empty response from Gemini")
 
-            except Exception as error:
-                print(f"[Batch {batch_index + 1}] Attempt {attempt + 1} failed: {error}")
+                    result = json.loads(response.text)
+                    break
 
-                if attempt < RETRY_LIMIT - 1:
-                    time.sleep(RETRY_DELAY_SECONDS)
+                except Exception as error:
+                    print(
+                        f"[Batch {batch_index + 1}] "
+                        f"Attempt {attempt + 1} failed: {error}"
+                    )
+
+                    if attempt < RETRY_LIMIT - 1:
+                        time.sleep(RETRY_DELAY_SECONDS)
+                    else:
+                        print(f"Skipping Batch {batch_index + 1}")
+                        result = {}
+
+            for source_id, _description in batch:
+                skills = result.get(str(source_id))
+
+                if not skills:
+                    print(f"Missing result for Job {source_id}")
+                    tech_stack = "no tech stack extracted"
                 else:
-                    print(f"Skipping Job {source_id}")
-                    result = {}
+                    tech_stack = ", ".join(skills)
 
-        if not result:
-            continue
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET tech_stack = ?
+                    WHERE source_id = ?
+                    """,
+                    (tech_stack, source_id),
+                )
 
-        for source_id, _description in batch:
-            skills = result.get(str(source_id))
+                print(f"Analyzed Job {source_id}: {tech_stack}")
 
-            if not skills:
-                print(f"Missing result for Job {source_id}")
-                tech_stack = "no tech stack extracted"
-            else:
-                tech_stack = ", ".join(skills)
+            conn.commit()
+            time.sleep(RETRY_DELAY_SECONDS)
 
-            cursor.execute("""
-                UPDATE jobs
-                SET tech_stack = ?
-                WHERE source_id = ?
-            """, (tech_stack, source_id))
+        print("\nDatabase updated!")
 
-            print(f"Analyzed Job {source_id}: {tech_stack}")
+    except sqlite3.Error as error:
+        print(f"[Database Error] {error}")
 
-        conn.commit()
+    except Exception as error:
+        print(f"[Unexpected Error] {error}")
 
-        time.sleep(RETRY_DELAY_SECONDS)
-    conn.close()
-
-    print("\nDatabase updated!")
+    finally:
+        if conn:
+            conn.close()
 
 
 if __name__ == "__main__":
