@@ -1,0 +1,18 @@
+services:
+  backend:
+    image: resume-backend:1.0
+    build:
+      context: ./backend
+    ports:
+      - "8001:8001"
+
+  frontend:
+    image: resume-frontend:1.0
+    build:
+      context: ./frontend
+    ports:
+      - "8000:8000"
+    environment:
+      BACKEND_URL: http://127.0.0.1:8001
+    depends_on:
+      - backend
