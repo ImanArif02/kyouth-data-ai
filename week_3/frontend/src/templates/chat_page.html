@@ -47,7 +47,66 @@
 
     <script>
         const backendUrl = "{{backend_url }}";
-        console.log("Backend URL:", backendUrl);
+
+        const chatBox = document.getElementById("chat-box");
+        const messageInput = document.getElementById("message-input");
+        const sendButton = document.getElementById("send-button");
+
+        function addMessage(text, sender) {
+            const wrapper = document.createElement("div");
+            wrapper.className = sender === "user"
+                ? "d-flex justify-content-end mb-3"
+                : "d-flex justify-content-start mb-3";
+
+            const bubble = document.createElement("div");
+            bubble.className = sender === "user"
+                ? "bg-primary text-white rounded p-3"
+                : "bg-secondary-subtle round p-3";
+
+            bubble.textContent = text;
+            wrapper.appendChild(bubble);
+            chatBox.appendChild(wrapper);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+
+            if (!message){
+                return;
+            }
+            
+            addMessage(message, "user");
+            messageInput.value = "";
+
+            try {
+                const response = await fetch(`${backendUrl}/chat`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        resume_text: "I have experience with Python, SQL, FastAPI and PostgreSQL.",
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    addMessage(`Backend error: ${data.detail || "Request failed"}`, "assistant");
+                    return;
+                }
+
+                addMessage(data.reply, "assistant");
+
+            } catch (error) {
+                console.error(error);
+                addMessage(`Connection error: ${error.message}`, "assistant");
+            }
+        }
+        
+        sendButton.addEventListener("click", sendMessage);
     </script>
 </body>
 </html>
