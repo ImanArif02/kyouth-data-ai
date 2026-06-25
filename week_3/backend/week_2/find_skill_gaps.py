@@ -101,6 +101,7 @@ def find_skill_gaps_from_text(resume_text: str, db_url: str) -> SkillGapResult:
         print(f"[Unexpected Error] {error}")
         return SkillGapResult(gaps=[])
 
+
 def find_skill_gaps(input_file_path: str, db_url: str) -> SkillGapResult:
     try:
         resume_text = Path(input_file_path).read_text(encoding="utf-8")
