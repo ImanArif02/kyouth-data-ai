@@ -162,9 +162,9 @@ Example JSON response:
 
 The frontend is responsible for:
 
-* Reading the selected PDF file.
-* Extracting text from the PDF.
-* Sending the user’s message and resume text to the backend.
+- Allowing the user to select a PDF resume file in the interface.
+- Sending the user’s message and sample resume text to the backend for the current prototype.
+- Displaying the skill-gap response returned by the backend.
 * Displaying the user’s message in the chat area.
 * Displaying the backend response in the chat area.
 * Showing an error message if the backend connection fails.
@@ -173,9 +173,9 @@ The frontend is responsible for:
 
 ## Data Flow
 
-1. The user uploads a PDF resume and enters a question in the browser.
-2. The frontend extracts text from the PDF resume.
-3. The frontend sends a JSON request to the backend `/chat` endpoint.
+1. The user selects a PDF resume and enters a question in the browser.
+2. The frontend sends a JSON request containing the user’s message and prototype resume text to the backend `/chat` endpoint.
+3. The backend processes the request using the Week 2 skill-gap analysis logic.
 4. The backend receives the resume text and user question.
 5. The backend uses the Week 2 skill-gap logic to compare resume skills with skills from the job listings database.
 6. The backend returns a JSON response containing the skill-gap result.
@@ -242,6 +242,7 @@ This confirms that the frontend and backend communicate correctly within the Doc
 * Chat history is not saved after the page is refreshed.
 * There is no user authentication.
 * The system is designed for local use and has not yet been deployed to a cloud platform.
+* In the current prototype, the PDF upload interface is available, but PDF text extraction is planned as a future enhancement. The backend currently uses sample resume text for skill-gap testing.
 
 ---
 
