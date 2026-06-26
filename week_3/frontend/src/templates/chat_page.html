@@ -12,20 +12,20 @@
 <body class="bg-light">
     <main class="container py-4">
         <section class="card shadow-sm">
-            <div class="card-header bg white">
+            <div class="card-header bg-white">
                 <h1 class="h4 mb-0">Resume Helper Chatbot</h1>
                 <p class="text-muted mb-0">Upload your resume PDF and ask a career question.</p>
             </div>
 
             <div id="chat-box" class="card-body" style="height: 420px; overflow-y: auto;">
-                <div class="d-dlex mb-3">
-                    <div class="bg.secondary-subtle rounded p-3">
-                        HI Upload your resume PDF and ask me abour your skill gap.
+                <div class="d-flex justify-content-start mb-3">
+                    <div class="bg-secondary-subtle rounded p-3">
+                        Hi! Upload your resume PDF and ask me about your skill gap.
                     </div>
                 </div>
             </div>
 
-            <div class="card-footer bg white">
+            <div class="card-footer bg-white">
                 <div class="mb-2">
                     <input id="resume-file" class="form-control" type="file" accept="application/pdf">
                 </div>
@@ -45,12 +45,20 @@
         </section>
     </main>
 
-    <script>
-        const backendUrl = "{{backend_url }}";
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
+
+    <script type="module">
+        import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs";
+
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+            "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
+
+        const backendUrl = "{{ backend_url }}";
 
         const chatBox = document.getElementById("chat-box");
         const messageInput = document.getElementById("message-input");
         const sendButton = document.getElementById("send-button");
+        const resumeFileInput = document.getElementById("resume-file");
 
         function addMessage(text, sender) {
             const wrapper = document.createElement("div");
@@ -61,7 +69,7 @@
             const bubble = document.createElement("div");
             bubble.className = sender === "user"
                 ? "bg-primary text-white rounded p-3"
-                : "bg-secondary-subtle round p-3";
+                : "bg-secondary-subtle rounded p-3";
 
             bubble.textContent = text;
             wrapper.appendChild(bubble);
@@ -69,17 +77,52 @@
             chatBox.scrollTop = chatBox.scrollHeight;
         }
 
+        async function extractPdfText(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+            let fullText = "";
+
+            for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+                const page = await pdf.getPage(pageNumber);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items
+                    .map((item) => item.str)
+                    .join(" ");
+
+                fullText += `${pageText}\n`;
+            }
+
+            return fullText.trim();
+        }
+
         async function sendMessage() {
             const message = messageInput.value.trim();
+            const resumeFile = resumeFileInput.files[0];
 
-            if (!message){
+            if (!message) {
+                addMessage("Please type a question first.", "assistant");
                 return;
             }
-            
+
+            if (!resumeFile) {
+                addMessage("Please upload a PDF resume first.", "assistant");
+                return;
+            }
+
             addMessage(message, "user");
             messageInput.value = "";
-
+            sendButton.disabled = true;
+            sendButton.textContent = "Sending...";
+                <!-- tambah sini untuk pastikan dia baca each pdf and tak ignore the pdf-->
             try {
+                const resumeText = await extractPdfText(resumeFile);
+
+                if (!resumeText) {
+                    addMessage("I could not extract readable text from this PDF.", "assistant");
+                    return;
+                }
+
                 const response = await fetch(`${backendUrl}/chat`, {
                     method: "POST",
                     headers: {
@@ -87,7 +130,7 @@
                     },
                     body: JSON.stringify({
                         message: message,
-                        resume_text: "I have experience with Python, SQL, FastAPI and PostgreSQL.",
+                        resume_text: resumeText,
                     }),
                 });
 
@@ -103,10 +146,19 @@
             } catch (error) {
                 console.error(error);
                 addMessage(`Connection error: ${error.message}`, "assistant");
+            } finally {
+                sendButton.disabled = false;
+                sendButton.textContent = "Send";
             }
         }
-        
+
         sendButton.addEventListener("click", sendMessage);
+
+        messageInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                sendMessage();
+            }
+        });
     </script>
 </body>
 </html>
